@@ -52,3 +52,33 @@ def load_features(path: str):
         return {str(r["id"]): np.asarray(list(map(float, r["features"])), dtype=np.float32)
                 for r in obj if isinstance(r, dict) and "id" in r and "features" in r}
     raise ValueError("unsupported features json")
+
+
+
+
+
+def unify_index(feat_map, y_ids, s_arr, t_arr):
+    #Collects every node ID that appears anywhere in features targets or edges.
+    #It builds a master list of unique nodes along with a dictionary mapping each ID to its numeric index.
+    ordered = list(feat_map.keys()) + list(y_ids) + list(pd.unique(s_arr)) + list(pd.unique(t_arr))
+    nodes = np.array(list(dict.fromkeys(ordered)), dtype=object)
+    id2ix = {k: i for i, k in enumerate(nodes)}
+    return nodes, id2ix
+
+def assemble_features(feat_map, nodes, id2ix):
+    #Creates a complete feature matrix for all nodes.
+    #If some nodes have shorter vectors, it pads them with zeros; if longer, it trims them. 
+    #Returns the resulting NumPy array.
+    d = max((len(v) for v in feat_map.values()), default=0)
+    if d == 0:
+        raise ValueError("no features found")
+    X = np.zeros((nodes.size, d), dtype=np.float32)
+    for k, v in feat_map.items():
+        i = id2ix[k]
+        if v.size >= d:
+            X[i] = v[:d]
+        else:
+            row = np.zeros(d, dtype=np.float32)
+            row[:v.size] = v
+            X[i] = row
+    return X

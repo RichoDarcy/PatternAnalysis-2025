@@ -2,7 +2,10 @@ import os
 import json
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder
+import torch
+from torch_geometric.data import Data
+from torch_geometric.utils import to_undirected
+from sklearn.preprocessing import LabelEncoder, QuantileTransformer, normalize
 
 BASE = os.path.join(os.path.dirname(__file__), "facebook_large")
 F_EDGES = "musae_facebook_edges.csv"
@@ -65,6 +68,9 @@ def unify_index(feat_map, y_ids, s_arr, t_arr):
     id2ix = {k: i for i, k in enumerate(nodes)}
     return nodes, id2ix
 
+
+
+
 def assemble_features(feat_map, nodes, id2ix):
     #Creates a complete feature matrix for all nodes.
     #If some nodes have shorter vectors, it pads them with zeros; if longer, it trims them. 
@@ -82,3 +88,27 @@ def assemble_features(feat_map, nodes, id2ix):
             row[:v.size] = v
             X[i] = row
     return X
+
+
+
+def scale_features(X: np.ndarray):
+    #Normalizes the feature matrix. It first transforms its values to follow a roughly normal distribution
+    #then L2-normalizing each row and turns it into a PyTorch tensor
+    qt = QuantileTransformer(n_quantiles=min(100, max(10, X.shape[0] // 10)), output_distribution="normal", subsample=int(1e9))
+    X = qt.fit_transform(X)
+    X = normalize(X, norm="l2", axis=1, copy=False)
+    return torch.tensor(X, dtype=torch.float32)
+
+
+
+
+
+def map_labels(y_ids, y_lab, nodes, id2ix):
+    #Places every known label into the right position in a full label vector aligned with the node order
+    #Nodes without labels stay as zeros
+    # Returns a PyTorch tensor.
+    y = np.zeros(nodes.size, dtype=np.int64)
+    pos = np.fromiter((id2ix.get(k, -1) for k in y_ids), dtype=np.int64)
+    keep = pos >= 0
+    y[pos[keep]] = y_lab[keep]
+    return torch.from_numpy(y)

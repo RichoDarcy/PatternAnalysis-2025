@@ -1,33 +1,42 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch_geometric.nn import GCNConv
 
-class MLP(nn.Module):
-    #Two-layer feed-forward classifier, hidden layer + output layer for node features
-    #ignores graph edges.
+class GNN(nn.Module):
+    #Two layer GNN: 
+    #GCN → ReLU → GCN → ReLU → linear head)
+    #returns logits per node at inference/training time.
     def __init__(self, in_dim, hidden, out_dim, dropout=0.5):
-        #Builds the network: a projection Linear(in_dim→hidden)
-        # n output head Linear(hidden→out_dim)
-        #Stores the dropout rate.
-        super().__init__()
-        self.proj = nn.Linear(in_dim, hidden)
-        self.head = nn.Linear(hidden, out_dim)
-        self.p = float(dropout)
+        #Constructs the model modules: 
+        #first and second GCNConv layers
+        #a final nn.Linear classifier
+        # And stores the dropout probability
+        nn.Module.__init__(self)
 
-    def get_embeddings(self, x, edge_index=None):
-        #Runs a forward pass up to the hidden layer ReLU + dropout off.
-        #Returns those hidden embeddings for each node.
-        h = self.proj(x)
-        h = F.relu(h, inplace=False)
-        h = F.dropout(h, p=self.p, training=False)
-        return h
+        self.conv_first  = GCNConv(in_dim, hidden)
 
-    def forward(self, x, edge_index=None):
-        # Full forward pass: hidden layer using ReLU + dropout honoring training mode
-        # followed by the output layer to produce class logits
-        h = self.proj(x)
-        h = F.relu(h, inplace=False)
-        h = F.dropout(h, p=self.p, training=self.training)
-        return self.head(h)
-    
+        self.conv_second = GCNConv(hidden, hidden)
+        self.out_linear  = nn.Linear(hidden, out_dim)
+        self.drop_prob   = float(dropout)
 
+    def forward(self, feats, edges, use_dropout):
+        #Internal helper that runs the two GCN layers with ReLU over input features feats and edge_index edges
+        #Returns the final hidden features tensor of shape [num_nodes, hidden].
+
+        convs = (self.conv_first, self.conv_second)
+        for conv in convs:
+            feats = conv(feats, edges)
+            feats = F.relu(feats, inplace=False)
+
+            if use_dropout:
+                feats = F.dropout(feats, p=self.drop_prob, training=True)
+        return feats
+
+ 
+    def get_embed(self, feats, edges):
+        #Inference-only pathway 
+        #Returns stable node embeddings after the second GCN layer, shape [num_nodes, hidden].
+        return self._flow(feats, edges, use_dropout=False)
+
+   

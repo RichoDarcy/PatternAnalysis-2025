@@ -43,11 +43,16 @@ def load_targets(path: str):
     ids = df[cols["id"]].astype(str).to_numpy()
     return ids, lab
 
+
 def load_features(path: str):
     #Reads a JSON file containing node features.
     #Handles both dictionary and list-based formats, then builds a mapping from node ID to its feature vector as a NumPy array of floats.
     with open(path, "r", encoding="utf-8") as fh:
-        obj = json.load(fh)
+        try:
+            obj = json.load(fh)
+        except json.JSONDecodeError:
+            fh.seek(0)
+            obj = [json.loads(line) for line in fh if line.strip()]
     if isinstance(obj, dict):
         obj = obj["features"] if ("features" in obj and isinstance(obj["features"], dict)) else obj
         return {str(k): np.asarray(list(map(float, v)), dtype=np.float32) for k, v in obj.items()}
@@ -57,9 +62,6 @@ def load_features(path: str):
     raise ValueError("unsupported features json")
 
 
-
-
-
 def unify_index(feat_map, y_ids, s_arr, t_arr):
     #Collects every node ID that appears anywhere in features targets or edges.
     #It builds a master list of unique nodes along with a dictionary mapping each ID to its numeric index.
@@ -67,7 +69,6 @@ def unify_index(feat_map, y_ids, s_arr, t_arr):
     nodes = np.array(list(dict.fromkeys(ordered)), dtype=object)
     id2ix = {k: i for i, k in enumerate(nodes)}
     return nodes, id2ix
-
 
 
 
@@ -94,12 +95,12 @@ def assemble_features(feat_map, nodes, id2ix):
 def scale_features(X: np.ndarray):
     #Normalizes the feature matrix. It first transforms its values to follow a roughly normal distribution
     #then L2-normalizing each row and turns it into a PyTorch tensor
-    qt = QuantileTransformer(n_quantiles=min(100, max(10, X.shape[0] // 10)), output_distribution="normal", subsample=int(1e9))
+    n_q = min(100, max(10, X.shape[0] // 10))
+    n_q = min(n_q, X.shape[0])
+    qt = QuantileTransformer(n_quantiles=n_q, output_distribution="normal", subsample=int(1e9))
     X = qt.fit_transform(X)
     X = normalize(X, norm="l2", axis=1, copy=False)
     return torch.tensor(X, dtype=torch.float32)
-
-
 
 
 
@@ -112,3 +113,37 @@ def map_labels(y_ids, y_lab, nodes, id2ix):
     keep = pos >= 0
     y[pos[keep]] = y_lab[keep]
     return torch.from_numpy(y)
+
+
+
+
+
+def build_edges(s_arr, t_arr, id2ix):
+    #Converts all source and target IDs into integer node indices
+    #removes any self-connections or missing IDs, and returns a symmetric edge index tensor.
+    sx = np.fromiter((id2ix.get(k, -1) for k in s_arr), dtype=np.int64)
+    tx = np.fromiter((id2ix.get(k, -1) for k in t_arr), dtype=np.int64)
+    keep = (sx >= 0) & (tx >= 0) & (sx != tx)
+    E = np.vstack([sx[keep], tx[keep]]).astype(np.int64)
+    E = torch.tensor(E, dtype=torch.long)
+    return to_undirected(E)
+
+
+
+
+def build_data(root: str = BASE):
+    #Runs the entire loading process
+    #reads in edges, targets, and features
+    #builds the node index
+    #assembles and scales load_feature
+    #maps labels; builds edges
+    #returns a complete torch_geometric.data.Data object ready for use.
+    s_arr, t_arr = load_edges(os.path.join(root, F_EDGES))
+    y_ids, y_lab = load_targets(os.path.join(root, F_TARGET))
+    feat_map = load_features(os.path.join(root, F_FEAT))
+    nodes, id2ix = unify_index(feat_map, y_ids, s_arr, t_arr)
+    X_np = assemble_features(feat_map, nodes, id2ix)
+    X = scale_features(X_np)
+    y = map_labels(y_ids, y_lab, nodes, id2ix)
+    E = build_edges(s_arr, t_arr, id2ix)
+    return Data(x=X, y=y, edge_index=E)

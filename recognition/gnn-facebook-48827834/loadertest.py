@@ -7,3 +7,14 @@ print("loader smoke OK")
 
 
 #smoke test for loader
+#Loads edge CSV and checks for valid source/target columns.
+#Loads target CSV and verifies ID and label columns exist.
+#Loads feature JSON and confirms non-empty feature vectors.
+#Ensures all three loaders return non-empty data structures.
+
+
+
+g = dataset.build_data()
+assert g.x.shape[0] == g.y.shape[0]
+assert g.edge_index.shape[0] == 2 and g.edge_index.shape[1] > 0
+print("final OK:", g)

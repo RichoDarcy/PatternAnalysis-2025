@@ -20,23 +20,41 @@ class GNN(nn.Module):
         self.out_linear  = nn.Linear(hidden, out_dim)
         self.drop_prob   = float(dropout)
 
-    def forward(self, feats, edges, use_dropout):
+    def forward(self, x, edge_index, use_dropout=True):
         #Internal helper that runs the two GCN layers with ReLU over input features feats and edge_index edges
         #Returns the final hidden features tensor of shape [num_nodes, hidden].
 
-        convs = (self.conv_first, self.conv_second)
-        for conv in convs:
-            feats = conv(feats, edges)
-            feats = F.relu(feats, inplace=False)
-
-            if use_dropout:
-                feats = F.dropout(feats, p=self.drop_prob, training=True)
-        return feats
+        h = self.stackflow(x, edge_index, use_dropout)
+        return self.out_linear(h)
 
  
     def get_embed(self, feats, edges):
-        #Inference-only pathway 
-        #Returns stable node embeddings after the second GCN layer, shape [num_nodes, hidden].
+        
         return self._flow(feats, edges, use_dropout=False)
 
+
+    def stackflow(self, x, edge_index, use_dropout: bool):
+    
+        
+        h = self.conv_first(x, edge_index)
+        h = F.relu(h, inplace=False)
+        if use_dropout:
+            h = F.dropout(h, p=self.drop_prob, training=self.training)
+        h = self.conv_second(h, edge_index)
+        h = F.relu(h, inplace=False)
+        if use_dropout:
+            h = F.dropout(h, p=self.drop_prob, training=self.training)
+        return h
    
+
+
+    def get_embed(self, x, edge_index):
+        #Inference-only pathway 
+        #Returns stable node embeddings after the second GCN layer, shape [num_nodes, hidden].
+        was_training = self.training
+        try:
+            self.eval()
+            with torch.no_grad():
+                return self.stackflow(x, edge_index, use_dropout=False)
+        finally:
+            self.train(was_training)

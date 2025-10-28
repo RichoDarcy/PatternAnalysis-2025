@@ -147,3 +147,18 @@ def build_data(root: str = BASE):
     y = map_labels(y_ids, y_lab, nodes, id2ix)
     E = build_edges(s_arr, t_arr, id2ix)
     return Data(x=X, y=y, edge_index=E)
+
+
+def split(g, train_frac=0.6, val_frac=0.2, seed=1, unlabeled=-1):
+    #shuffles labeled nodes and attach boolean masks for a 60/20/20 train/val/test split
+    rng = np.random.default_rng(seed)
+    idx = np.flatnonzero(g.y.cpu().numpy() != unlabeled)
+    idx = rng.permutation(idx)
+    n = len(idx)
+    n_tr = int(n * train_frac)
+    n_va = int(n * val_frac)
+    tr, va, te = idx[:n_tr], idx[n_tr:n_tr+n_va], idx[n_tr+n_va:]
+    g.train_mask = torch.zeros(g.num_nodes, dtype=torch.bool); g.train_mask[tr] = True
+    g.val_mask   = torch.zeros(g.num_nodes, dtype=torch.bool); g.val_mask[va] = True
+    g.test_mask  = torch.zeros(g.num_nodes, dtype=torch.bool); g.test_mask[te] = True
+    return g

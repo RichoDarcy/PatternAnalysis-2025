@@ -18,3 +18,9 @@ g = dataset.build_data()
 assert g.x.shape[0] == g.y.shape[0]
 assert g.edge_index.shape[0] == 2 and g.edge_index.shape[1] > 0
 print("final OK:", g)
+
+#Runs the full build_data() pipeline.
+#Confirms features (x) and labels (y) have the same number of nodes.
+#Verifies the graph has edges (edge_index not empty).
+#Checks edge_index has correct shape [2, E].
+#Confirms returned object is a valid torch_geometric.data.Data instance.

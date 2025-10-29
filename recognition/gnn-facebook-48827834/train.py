@@ -1,9 +1,18 @@
-
-# train.py
 import torch
 import torch.nn.functional as F
 from dataset import build_data, split
 from modules import GNN
+
+import os
+import csv
+from pathlib import Path
+import matplotlib.pyplot as plt
+
+
+def plotpath(dir_name: str = "runs") -> Path:
+    p = Path(dir_name)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 def indecis(mask: torch.Tensor) -> torch.Tensor:
     return mask.nonzero(as_tuple=False).flatten()
@@ -31,13 +40,18 @@ def infer(model: GNN, graph, use_dropout: bool, n_classes: int) -> torch.Tensor:
 
 def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=200):
     g = split(build_data(), seed=seed)
-    num_classes = num_classes(g.y, unlabeled=-1)
-    model = GNN(g.num_node_features, hidden, num_classes, dropout)
+    n_classes = num_classes(g.y, unlabeled=-1)
+    model = GNN(g.num_node_features, hidden, n_classes, dropout)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     tr_idx = indecis(g.train_mask)
     va_idx = indecis(g.val_mask)
     te_idx = indecis(g.test_mask)
+    run_dir = Path("runs")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = run_dir / "metrics.csv"
+    metrics_path.write_text("epoch,train_loss,val_acc,test_acc\n", encoding="utf-8")
+    epoch_hist, loss_hist, val_hist, test_hist = [], [], [], []
 
 
     for epoch in range(1, epochs + 1):
@@ -54,6 +68,13 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
             val_acc = accuracy(logits_ev.index_select(0, va_idx), g.y.index_select(0, va_idx))
             test_acc = accuracy(logits_ev.index_select(0, te_idx), g.y.index_select(0, te_idx))
 
+        with metrics_path.open("a", encoding="utf-8") as f:
+            f.write(f"{epoch},{loss.item():.6f},{val_acc:.6f},{test_acc:.6f}\n")
+            epoch_hist.append(int(epoch))
+            loss_hist.append(float(loss.item()))
+            val_hist.append(float(val_acc))
+            test_hist.append(float(test_acc))
+
 
 
         if epoch % 10 == 0:
@@ -63,6 +84,28 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
 
     torch.save(model.state_dict(), "gnn_facebook.pt")
     print("checkpoint saved: gnn_facebook.pt")
+    #loss function
+    fig1, ax1 = plt.subplots()
+    ax1.set_title("Training Loss")
+    ax1.set_xlabel("epoch")
+    ax1.set_ylabel("loss")
+    ax1.plot(epoch_hist, loss_hist, label="train_loss")
+    ax1.legend()
+    fig1.tight_layout()
+    fig1.savefig(run_dir / "loss_curve.png", dpi=150)
+    plt.close(fig1)
+
+    #Accuracy
+    fig2, ax2 = plt.subplots()
+    ax2.set_title("Validation/Test Accuracy")
+    ax2.set_xlabel("epoch")
+    ax2.set_ylabel("accuracy")
+    ax2.plot(epoch_hist, val_hist, label="val_acc")
+    ax2.plot(epoch_hist, test_hist, label="test_acc")
+    ax2.legend()
+    fig2.tight_layout()
+    fig2.savefig(run_dir / "acc_curve.png", dpi=150)
+    plt.close(fig2)
 
 if __name__ == "__main__":
     train()

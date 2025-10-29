@@ -108,12 +108,13 @@ def map_labels(y_ids, y_lab, nodes, id2ix):
     #Places every known label into the right position in a full label vector aligned with the node order
     #Nodes without labels stay as zeros
     # Returns a PyTorch tensor.
-    y = np.zeros(nodes.size, dtype=np.int64)
+    y = np.full(nodes.size, fill_value=-1, dtype=np.int64)
     pos = np.fromiter((id2ix.get(k, -1) for k in y_ids), dtype=np.int64)
     keep = pos >= 0
-    y[pos[keep]] = y_lab[keep]
-    return torch.from_numpy(y)
+    if keep.any():
+        y[pos[keep]] = y_lab[keep]
 
+    return torch.from_numpy(y)
 
 
 

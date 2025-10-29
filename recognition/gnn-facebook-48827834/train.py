@@ -8,6 +8,9 @@ import csv
 from pathlib import Path
 import matplotlib.pyplot as plt
 
+RUN_DIR = Path("runs"); RUN_DIR.mkdir(parents=True, exist_ok=True)
+CKPT_PATH = RUN_DIR / "gnn_facebook.pt"
+
 
 def plotpath(dir_name: str = "runs") -> Path:
     p = Path(dir_name)
@@ -57,14 +60,14 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
     for epoch in range(1, epochs + 1):
         model.train()
         opt.zero_grad()
-        logits_tr = infer(model, g, use_dropout=True, n_classes=num_classes)
+        logits_tr = infer(model, g, use_dropout=True, n_classes=n_classes)
         loss = F.cross_entropy(logits_tr.index_select(0, tr_idx), g.y.index_select(0, tr_idx))
         loss.backward()
         opt.step()
 
         model.eval()
         with torch.no_grad():
-            logits_ev = infer(model, g, use_dropout=False, n_classes=num_classes)
+            logits_ev = infer(model, g, use_dropout=False, n_classes=n_classes)
             val_acc = accuracy(logits_ev.index_select(0, va_idx), g.y.index_select(0, va_idx))
             test_acc = accuracy(logits_ev.index_select(0, te_idx), g.y.index_select(0, te_idx))
 
@@ -82,7 +85,8 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
 
 
 
-    torch.save(model.state_dict(), "gnn_facebook.pt")
+    torch.save(model.state_dict(), CKPT_PATH)
+    print(f"saved checkpoint to {CKPT_PATH}")
     print("checkpoint saved: gnn_facebook.pt")
     #loss function
     fig1, ax1 = plt.subplots()

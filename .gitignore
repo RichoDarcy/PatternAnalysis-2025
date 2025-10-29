@@ -18,6 +18,4 @@ loss_curve.png
 __pycache__/
 *.pyc
 
-pycache__/
-*.pyc
-*.pyd
+/recognition/gnn-facebook-48827834/__pycache__/

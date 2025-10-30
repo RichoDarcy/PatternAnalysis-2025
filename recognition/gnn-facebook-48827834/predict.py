@@ -2,9 +2,10 @@ import torch
 from pathlib import Path
 from dataset import build_data, split
 from modules import GNN
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def main():
-    g = split(build_data(), seed=1)
+    g = split(build_data(), seed=1).to(device)
 
 
     keep = g.y.ne(-1)
@@ -13,9 +14,13 @@ def main():
 
 
     model = GNN(g.num_node_features, 128, n_classes, 0.5)
+    model.to(device)
     ckpt = str(Path("runs") / "gnn_facebook.pt")
-    model.load_state_dict(torch.load(ckpt, map_location="cpu"))
+
+    model.load_state_dict(torch.load(ckpt, map_location=device))
+
     model.eval()
+
 
 
     with torch.no_grad():

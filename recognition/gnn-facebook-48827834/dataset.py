@@ -127,7 +127,9 @@ def build_edges(s_arr, t_arr, id2ix):
     keep = (sx >= 0) & (tx >= 0) & (sx != tx)
     E = np.vstack([sx[keep], tx[keep]]).astype(np.int64)
     E = torch.tensor(E, dtype=torch.long)
-    return to_undirected(E)
+    E2 = torch.cat([E, E.flip(0)], dim=1)
+    E2 = E2.t().unique(dim=0).t()
+    return E2
 
 
 

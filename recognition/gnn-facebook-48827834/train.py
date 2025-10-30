@@ -7,7 +7,7 @@ import os
 import csv
 from pathlib import Path
 import matplotlib.pyplot as plt
-
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 RUN_DIR = Path("runs"); RUN_DIR.mkdir(parents=True, exist_ok=True)
 CKPT_PATH = RUN_DIR / "gnn_facebook.pt"
 
@@ -42,9 +42,12 @@ def infer(model: GNN, graph, use_dropout: bool, n_classes: int) -> torch.Tensor:
 
 
 def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=200):
-    g = split(build_data(), seed=seed)
+    g = split(build_data(), seed=seed).to(device)
+    print("Running on:", (torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"))
     n_classes = num_classes(g.y, unlabeled=-1)
-    model = GNN(g.num_node_features, hidden, n_classes, dropout)
+    model = GNN(g.num_node_features, hidden, n_classes, dropout).to(device)
+
+
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     tr_idx = indecis(g.train_mask)
@@ -82,7 +85,7 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
 
         if epoch % 10 == 0:
             print(f"[v3] epoch={epoch:03d} | loss={loss:.5f} | val={val_acc:.4f} | test={test_acc:.4f}")
-
+            torch.save(model.state_dict(), CKPT_PATH)
 
 
     torch.save(model.state_dict(), CKPT_PATH)

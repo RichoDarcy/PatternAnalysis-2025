@@ -9,6 +9,9 @@
 venv/
 env/
 runs/
+runs1/
+runs2/
+runsog/
 *.pt
 metrics.csv
 acc_curve.png

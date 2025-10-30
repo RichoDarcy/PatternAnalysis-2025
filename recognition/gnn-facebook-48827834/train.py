@@ -9,7 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 RUN_DIR = Path("runs"); RUN_DIR.mkdir(parents=True, exist_ok=True)
-CKPT_PATH = RUN_DIR / "gnn_facebook.pt"
+
 
 
 def plotpath(dir_name: str = "runs") -> Path:
@@ -41,7 +41,7 @@ def infer(model: GNN, graph, use_dropout: bool, n_classes: int) -> torch.Tensor:
 
 
 
-def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=200):
+def train(seed=1, hidden=128, dropout=0.33, lr=0.02, weight_decay=1e-5, epochs=200):
     g = split(build_data(), seed=seed).to(device)
     print("Running on:", (torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"))
     n_classes = num_classes(g.y, unlabeled=-1)
@@ -58,6 +58,8 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
     metrics_path = run_dir / "metrics.csv"
     metrics_path.write_text("epoch,train_loss,val_acc,test_acc\n", encoding="utf-8")
     epoch_hist, loss_hist, val_hist, test_hist = [], [], [], []
+    best_val = -1.0
+    
 
 
     for epoch in range(1, epochs + 1):
@@ -73,6 +75,10 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
             logits_ev = infer(model, g, use_dropout=False, n_classes=n_classes)
             val_acc = accuracy(logits_ev.index_select(0, va_idx), g.y.index_select(0, va_idx))
             test_acc = accuracy(logits_ev.index_select(0, te_idx), g.y.index_select(0, te_idx))
+            if val_acc > best_val:
+                best_val = val_acc
+                torch.save(model.state_dict(), run_dir / "gnn_facebook.pt")
+                    
 
         with metrics_path.open("a", encoding="utf-8") as f:
             f.write(f"{epoch},{loss.item():.6f},{val_acc:.6f},{test_acc:.6f}\n")
@@ -85,12 +91,10 @@ def train(seed=1, hidden=128, dropout=0.5, lr=1e-2, weight_decay=5e-4, epochs=20
 
         if epoch % 10 == 0:
             print(f"[v3] epoch={epoch:03d} | loss={loss:.5f} | val={val_acc:.4f} | test={test_acc:.4f}")
-            torch.save(model.state_dict(), CKPT_PATH)
+           
 
 
-    torch.save(model.state_dict(), CKPT_PATH)
-    print(f"saved checkpoint to {CKPT_PATH}")
-    print("checkpoint saved: gnn_facebook.pt")
+    
     #loss function
     fig1, ax1 = plt.subplots()
     ax1.set_title("Training Loss")

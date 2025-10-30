@@ -2,7 +2,11 @@ import torch
 from pathlib import Path
 from dataset import build_data, split
 from modules import GNN
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+import os, numpy as np
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+os.makedirs("runs", exist_ok=True)
 
 def main():
     g = split(build_data(), seed=1).to(device)
@@ -33,8 +37,44 @@ def main():
         correct = preds.eq(g.y) & test_mask
         acc = correct.sum().item() / int(test_mask.sum().item())
         
+    
+
+
+    
+
+    lab = (g.y >= 0)
+    idx = lab.nonzero(as_tuple=False).view(-1)
+
+    yt = g.y.index_select(0, idx).cpu().numpy()
+    yp = preds.index_select(0, idx).cpu().numpy()
+    fl = (yt != yp).astype(np.int32)
+
+    with torch.no_grad():
+        H = model.get_embed(g.x, g.edge_index).cpu().numpy()
+    Z = TSNE(n_components=2, perplexity=30, init="pca", learning_rate="auto", random_state=0)\
+        .fit_transform(H[lab.cpu().numpy()])
+
+    views = {
+        "tsne_gt.png":   (yt, "tab20", "t-SNE truth"),
+        "tsne_pred.png": (yp, "tab20", "t-SNE prediction"),
+        "tsne_err.png":  (fl, "gray",  "t-SNE error"),
+    }
+
+    for fname, (color, cmap_name, title) in views.items():
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.scatter(Z[:, 0], Z[:, 1], c=color, s=3, alpha=0.85, cmap=cmap_name)
+        ax.set_title(title)
+        fig.tight_layout()
+        out = os.path.join("runs", fname)
+        fig.savefig(out, dpi=150)
+        plt.close(fig)
+        print("saved", out)
 
     print(f"test_acc={acc:.4f}")
+
+
+
+    
 
 if __name__ == "__main__":
     main()

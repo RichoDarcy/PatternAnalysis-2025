@@ -13,47 +13,56 @@ RUN_DIR = Path("runs"); RUN_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def plotpath(dir_name: str = "runs") -> Path:
+    # ensure output dir exists then return Path
     p = Path(dir_name)
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 def indecis(mask: torch.Tensor) -> torch.Tensor:
-    return mask.nonzero(as_tuple=False).flatten()
+    #boolean mask to flat indice
+    return mask.nonzero(as_tuple=False).flatten() 
 
 
 
 
 def num_classes(labels: torch.Tensor, unlabeled: int = -1) -> int:
+    # count classes among labeled items
     keep = labels[labels != unlabeled]
     return int(keep.max().item()) + 1 if keep.numel() else 0
 
 
 
 def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
+    # top-1 accuracy
     preds = logits.argmax(dim=1)
     return (preds == labels).float().mean().item()
 
 
 
 def infer(model: GNN, graph, use_dropout: bool, n_classes: int) -> torch.Tensor:
+    # forward pass
+    # will tolerate mismatch if head not applied
     acts = model(graph.x, graph.edge_index, use_dropout=use_dropout)
     return acts if acts.shape[-1] == n_classes else model.out_linear(acts)
 
 
 
 def train(seed=1, hidden=128, dropout=0.33, lr=0.02, weight_decay=1e-5, epochs=200):
+    #build data, split data, move data to device
     g = split(build_data(), seed=seed).to(device)
     print("Running on:", (torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"))
+    #set up model and optimiser
     n_classes = num_classes(g.y, unlabeled=-1)
     model = GNN(g.num_node_features, hidden, n_classes, dropout).to(device)
 
 
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-
+    #precomputing split indices for slicing
     tr_idx = indecis(g.train_mask)
     va_idx = indecis(g.val_mask)
     te_idx = indecis(g.test_mask)
     run_dir = Path("runs")
+    #writing metrics file
     run_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = run_dir / "metrics.csv"
     metrics_path.write_text("epoch,train_loss,val_acc,test_acc\n", encoding="utf-8")
@@ -63,23 +72,26 @@ def train(seed=1, hidden=128, dropout=0.33, lr=0.02, weight_decay=1e-5, epochs=2
 
 
     for epoch in range(1, epochs + 1):
+        #training step
         model.train()
         opt.zero_grad()
         logits_tr = infer(model, g, use_dropout=True, n_classes=n_classes)
+        #CE over train subset
         loss = F.cross_entropy(logits_tr.index_select(0, tr_idx), g.y.index_select(0, tr_idx))
         loss.backward()
         opt.step()
-
+        #eval step
         model.eval()
         with torch.no_grad():
             logits_ev = infer(model, g, use_dropout=False, n_classes=n_classes)
             val_acc = accuracy(logits_ev.index_select(0, va_idx), g.y.index_select(0, va_idx))
             test_acc = accuracy(logits_ev.index_select(0, te_idx), g.y.index_select(0, te_idx))
+            #save best checkpoint
             if val_acc > best_val:
                 best_val = val_acc
                 torch.save(model.state_dict(), run_dir / "gnn_facebook.pt")
                     
-
+        #append metrics row
         with metrics_path.open("a", encoding="utf-8") as f:
             f.write(f"{epoch},{loss.item():.6f},{val_acc:.6f},{test_acc:.6f}\n")
             epoch_hist.append(int(epoch))
@@ -93,7 +105,7 @@ def train(seed=1, hidden=128, dropout=0.33, lr=0.02, weight_decay=1e-5, epochs=2
             print(f"[v3] epoch={epoch:03d} | loss={loss:.5f} | val={val_acc:.4f} | test={test_acc:.4f}")
            
 
-
+    #plots
     
     #loss function
     fig1, ax1 = plt.subplots()

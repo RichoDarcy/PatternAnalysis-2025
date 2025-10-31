@@ -3,19 +3,17 @@
 /recognition/**/facebook_large/*.json
 /recognition/**/facebook_large/*.tsv
 /recognition/**/facebook_large/*.txt
-/recognition/**/facebook_large/README.*
+
 
 .venv/
 venv/
 env/
-runs/
+
 runs1/
 runs2/
+runs3/
 runsog/
-*.pt
-metrics.csv
-acc_curve.png
-loss_curve.png
+
 
 
 __pycache__/

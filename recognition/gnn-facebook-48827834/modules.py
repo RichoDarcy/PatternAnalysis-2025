@@ -14,11 +14,11 @@ class GNN(nn.Module):
         # And stores the dropout probability
         nn.Module.__init__(self)
 
-        self.conv_first  = GCNConv(in_dim, hidden)
+        self.conv_first  = GCNConv(in_dim, hidden) #first GCN layer
 
-        self.conv_second = GCNConv(hidden, hidden)
-        self.out_linear  = nn.Linear(hidden, out_dim)
-        self.drop_prob   = float(dropout)
+        self.conv_second = GCNConv(hidden, hidden) #second GCN layer
+        self.out_linear  = nn.Linear(hidden, out_dim) #logits head
+        self.drop_prob   = float(dropout) #dropout rate
 
     def forward(self, x, edge_index, use_dropout=True):
         #Internal helper that runs the two GCN layers with ReLU over input features feats and edge_index edges
@@ -28,33 +28,30 @@ class GNN(nn.Module):
         return self.out_linear(h)
 
  
-    def get_embed(self, feats, edges):
-        
-        return self._flow(feats, edges, use_dropout=False)
-
+    
 
     def stackflow(self, x, edge_index, use_dropout: bool):
     
         
-        h = self.conv_first(x, edge_index)
-        h = F.relu(h, inplace=False)
+        h = self.conv_first(x, edge_index)  #aggregate neighbour
+        h = F.relu(h, inplace=False) #non-linearity keeping grads clearr
         if use_dropout:
             h = F.dropout(h, p=self.drop_prob, training=self.training)
-        h = self.conv_second(h, edge_index)
-        h = F.relu(h, inplace=False)
+        h = self.conv_second(h, edge_index) #aggregate again
+        h = F.relu(h, inplace=False) #second activation
         if use_dropout:
             h = F.dropout(h, p=self.drop_prob, training=self.training)
-        return h
+        return h #return node embeddings
    
 
 
     def get_embed(self, x, edge_index):
         #Inference-only pathway 
         #Returns stable node embeddings after the second GCN layer, shape [num_nodes, hidden].
-        was_training = self.training
+        was_training = self.training  # store current mode
         try:
-            self.eval()
+            self.eval() #disable dropout
             with torch.no_grad():
                 return self.stackflow(x, edge_index, use_dropout=False)
         finally:
-            self.train(was_training)
+            self.train(was_training) #restore original mode

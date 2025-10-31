@@ -28,6 +28,7 @@ def load_targets(path: str):
     #Converts those labels into numeric form and returns both the IDs and encoded labels.
     df = pd.read_csv(path)
     cols = {c.lower(): c for c in df.columns}
+    #Prefer targe fall back to page_type, else first non-id column.
     if "id" not in cols:
         raise ValueError("targets csv requires id column")
     if "target" in cols:
@@ -39,7 +40,7 @@ def load_targets(path: str):
         if not cand:
             raise ValueError("no label column")
         raw = df[cand[0]].astype(str).to_numpy()
-    lab = LabelEncoder().fit_transform(raw)
+    lab = LabelEncoder().fit_transform(raw)    #Stable 0..K-1 encoding
     ids = df[cols["id"]].astype(str).to_numpy()
     return ids, lab
 
@@ -56,7 +57,9 @@ def load_features(path: str):
     if isinstance(obj, dict):
         obj = obj["features"] if ("features" in obj and isinstance(obj["features"], dict)) else obj
         return {str(k): np.asarray(list(map(float, v)), dtype=np.float32) for k, v in obj.items()}
+    #Convert to float32 arrays to ensure keys are strings for consistent indexing
     if isinstance(obj, list):
+        #Guard against incorrect data and only accepts dicts with both id and features
         return {str(r["id"]): np.asarray(list(map(float, r["features"])), dtype=np.float32)
                 for r in obj if isinstance(r, dict) and "id" in r and "features" in r}
     raise ValueError("unsupported features json")
@@ -66,6 +69,7 @@ def unify_index(feat_map, y_ids, s_arr, t_arr):
     #Collects every node ID that appears anywhere in features targets or edges.
     #It builds a master list of unique nodes along with a dictionary mapping each ID to its numeric index.
     ordered = list(feat_map.keys()) + list(y_ids) + list(pd.unique(s_arr)) + list(pd.unique(t_arr))
+    #dict.fromkeys preserves first occurrence order while deduplicating
     nodes = np.array(list(dict.fromkeys(ordered)), dtype=object)
     id2ix = {k: i for i, k in enumerate(nodes)}
     return nodes, id2ix
@@ -83,10 +87,10 @@ def assemble_features(feat_map, nodes, id2ix):
     for k, v in feat_map.items():
         i = id2ix[k]
         if v.size >= d:
-            X[i] = v[:d]
+            X[i] = v[:d] #Truncate long vectors deterministically
         else:
             row = np.zeros(d, dtype=np.float32)
-            row[:v.size] = v
+            row[:v.size] = v #Left-pad with zeros for short vectors
             X[i] = row
     return X
 
@@ -95,11 +99,11 @@ def assemble_features(feat_map, nodes, id2ix):
 def scale_features(X: np.ndarray):
     #Normalizes the feature matrix. It first transforms its values to follow a roughly normal distribution
     #then L2-normalizing each row and turns it into a PyTorch tensor
-    n_q = min(100, max(10, X.shape[0] // 10))
-    n_q = min(n_q, X.shape[0])
+    n_q = min(100, max(10, X.shape[0] // 10)) #up to 100 quantiles, at least 10 heuristic
+    n_q = min(n_q, X.shape[0]) #Never exceed number of samples
     qt = QuantileTransformer(n_quantiles=n_q, output_distribution="normal", subsample=int(1e9))
     X = qt.fit_transform(X)
-    X = normalize(X, norm="l2", axis=1, copy=False)
+    X = normalize(X, norm="l2", axis=1, copy=False) #Unitlength rows mitigate feature scale issues
     return torch.tensor(X, dtype=torch.float32)
 
 
@@ -112,7 +116,7 @@ def map_labels(y_ids, y_lab, nodes, id2ix):
     pos = np.fromiter((id2ix.get(k, -1) for k in y_ids), dtype=np.int64)
     keep = pos >= 0
     if keep.any():
-        y[pos[keep]] = y_lab[keep]
+        y[pos[keep]] = y_lab[keep] #Only assign labels when there are matching nodes
 
     return torch.from_numpy(y)
 
@@ -127,6 +131,8 @@ def build_edges(s_arr, t_arr, id2ix):
     keep = (sx >= 0) & (tx >= 0) & (sx != tx)
     E = np.vstack([sx[keep], tx[keep]]).astype(np.int64)
     E = torch.tensor(E, dtype=torch.long)
+    #Symmetrize and remove duplicates
+    #transpose - unique by column -transpose back 
     E2 = torch.cat([E, E.flip(0)], dim=1)
     E2 = E2.t().unique(dim=0).t()
     return E2
@@ -156,7 +162,7 @@ def split(g, train_frac=0.6, val_frac=0.2, seed=1, unlabeled=-1):
     #shuffles labeled nodes and attach boolean masks for a 60/20/20 train/val/test split
     rng = np.random.default_rng(seed)
     idx = np.flatnonzero(g.y.cpu().numpy() != unlabeled)
-    idx = rng.permutation(idx)
+    idx = rng.permutation(idx) #Shuffle once deterministically
     n = len(idx)
     n_tr = int(n * train_frac)
     n_va = int(n * val_frac)

@@ -3,7 +3,8 @@
 /recognition/**/facebook_large/*.json
 /recognition/**/facebook_large/*.tsv
 /recognition/**/facebook_large/*.txt
-
+/recognition/gnn-facebook-48827834/__pycache__/
+runs/*.pt
 
 .venv/
 venv/
